@@ -1,0 +1,31 @@
+This is the entire change TrekSafe makes to upstream Meshtastic. Two lines, in
+one file. Everything else lives in this repo and is symlinked into the upstream
+tree at build time, which is what D1 means by a module rather than a fork: when
+Meshtastic ships a release you pull it, reapply two lines, and carry on.
+
+The context below is from src/modules/Modules.cpp on the master branch as of
+August 2026. Upstream moves this file often. If the patch does not apply, do
+not fight it, make the two changes by hand:
+
+  1. add     #include "modules/TrekSafe/TrekSafeModule.h"    with the other
+             module includes at the top
+  2. add     trekSafeModule = new TrekSafeModule();          inside
+             setupModules(), in the section that runs when the device is not
+             in router-only mode
+
+Keeping this to two lines is the point. If it ever grows past a handful, that
+is the signal that D1 deserves re-opening, not a reason to quietly fork.
+
+--- a/src/modules/Modules.cpp
++++ b/src/modules/Modules.cpp
+@@
+ #include "modules/NodeInfoModule.h"
+ #include "modules/PositionModule.h"
++#include "modules/TrekSafe/TrekSafeModule.h"
+ #include "modules/RoutingModule.h"
+ #include "modules/TextMessageModule.h"
+@@
+     nodeInfoModule = new NodeInfoModule();
+     positionModule = new PositionModule();
++    trekSafeModule = new TrekSafeModule(TrekSafeModule::ROLE_BEACON);
+     waypointModule = new WaypointModule();

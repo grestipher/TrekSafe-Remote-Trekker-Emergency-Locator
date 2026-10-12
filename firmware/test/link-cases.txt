@@ -1,0 +1,41 @@
+TS1|A4F2|1|0|SOS|1|A4F2|52.8734|-118.0814|12|1755000000|I|86
+TS1|A4F2|0|0|OK|1|A4F2|0|0||
+TS1|BA5E|65535|3|ACK|1|A4F2|INC-001
+ts1|a4f2|1|0|lowercase tag and origin
+TS2|A4F2|1|0|a link version we do not speak
+TS0|A4F2|1|0|nor this one
+TS|A4F2|1|0|truncated tag
+TS1|A4F2|1|0|
+TS1|A4F2|1|0
+TS1|A4F2|1
+TS1|A4F2
+TS1
+
+|||
+||||
+hello there
+SOS|1|A4F2|52.8|-118.0|12|0|M|87
+TS1||1|0|no origin
+TS1|A|1|0|origin too short
+TS1|AAAAAAAAA|1|0|origin too long
+TS1|ZZZZ|1|0|origin not hex
+TS1|A4F2|65535|255|at the limits
+TS1|A4F2|65536|0|sequence past the limit
+TS1|A4F2|1|256|hops past the limit
+TS1|A4F2|-1|0|negative sequence
+TS1|A4F2|+1|0|signed sequence
+TS1|A4F2|1_0|0|underscore separator
+TS1|A4F2|1|0_0|underscore in hops
+TS1|A4F2|0x10|0|hex sequence
+TS1|A4F2|1.0|0|decimal sequence
+TS1|A4F2|1e2|0|exponent sequence
+TS1|A4F2|01|00|leading zeroes
+TS1|A4F2||0|empty sequence
+TS1|A4F2|1||empty hops
+TS1|A4F2| 1 | 0 |spaces around the numbers
+ TS1|A4F2|1|0|leading space before the tag
+TS1 |A4F2|1|0|trailing space after the tag
+TS1| A4F2|1|0|space before the origin
+TS1|A4F2 |1|0|space after the origin
+TS1|A4F2|1|0|payload|with|its|own|pipes
+TS1|A4F2|1|0|  payload with surrounding spaces  

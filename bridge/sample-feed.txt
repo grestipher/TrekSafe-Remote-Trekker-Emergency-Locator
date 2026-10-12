@@ -1,0 +1,20 @@
+# A scripted incident, for exercising the whole path with no radio.
+# Lines starting with # are skipped. The bridge replays one line per interval.
+#
+#   python3 bridge/treksafe_bridge.py --source replay:bridge/sample-feed.txt
+#
+# Repeaters check in first, so the console has coverage to report.
+TEL|1|FA01|91|4.1|-2.4
+TEL|1|FA02|64|3.9|-6.1
+# A party checks in from the trail. No alarm.
+OK|1|A4F2|52.8801|-118.0712|14|1755000000
+# The button goes. Under canopy, so no lock yet. This must still alarm.
+SOS|1|A4F2|0|0||1755000420|I|86
+# The beacon repeats, still no fix. One incident, not two.
+SOS|1|A4F2|0|0||1755000450|I|86
+# The lock arrives. The position lands on the existing incident.
+SOS|1|A4F2|52.8734|-118.0814|12|1755000480|I|85
+# A second beacon, garbled id. Raises an alarm nobody can reply to.
+SOS|1|ZZ!Z|52.9001|-118.1204|30|1755000500|M|41
+# A repeater goes quiet after this point, which the coverage figure will show.
+TEL|1|FA01|89|4.1|-2.9

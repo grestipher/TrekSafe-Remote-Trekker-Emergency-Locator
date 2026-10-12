@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Base Station Console</title>
+<!-- Leaflet is the one thing this console does not carry itself, and it comes
+     off a CDN. Pinned by content hash, so a compromised or swapped file simply
+     does not run: without this, one bad response executes arbitrary code in the
+     console a warden watches for distress calls, and the map failing to load is
+     an incomparably better outcome. Verified against 1.9.4 as published. -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+      integrity="sha384-c6Rcwz4e4CITMbu/NBmnNS8yN2sC3cUElMEMfP3vqqKFp7GOYaaBBCqmaWBjmkjb"
+      crossorigin="anonymous" referrerpolicy="no-referrer">
+<style>
+  :root{
+    --base:#131f29; --panel:#1a2a37; --panel2:#213544; --edge:#2b4152;
+    --ink:#dbe7ef; --dim:#7d97ab; --faint:#4e6a80;
+    --ok:#4fb286; --alert:#e2483c; --warn:#e8a33d; --link:#5fa8d3;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--base); color:var(--ink);
+    font-family:var(--ui); font-size:14px; overflow:hidden;
+    display:flex; flex-direction:column;
+  }
+  /* The console changes state as a whole rather than showing a notification,
+     because the failure mode is a warden who is not looking at the screen. */
+  body.alarm{ box-shadow: inset 0 0 0 3px var(--alert); }
+  body.alarm .statusbar{ background:var(--alert); border-bottom-color:var(--alert); }
+  body.alarm .statusbar .sysstate{ color:#fff; }
+
+  .statusbar{
+    height:52px; flex:none; display:flex; align-items:center; gap:22px; padding:0 16px;
+    background:var(--panel); border-bottom:1px solid var(--edge);
+  }
+  .sysstate{
+    font-family:var(--mono); font-size:15px; font-weight:700;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--ok);
+  }
+  /* The blink is a second cue, never the only one: the words next to it say
+     the same thing, so reduced motion loses nothing. */
+  body.alarm .sysstate{ animation: blink 1.05s steps(1,end) infinite; }
+  @keyframes blink{ 50%{ opacity:.25 } }
+  .stat{ display:flex; flex-direction:column; gap:2px; }
+  .stat .k{ font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); }
+  .stat .v{ font-family:var(--mono); font-size:13px; }
+  .stat .v.bad{ color:var(--warn); font-weight:700 }
+  .spacer{ flex:1 }
+  button{
+    font-family:var(--ui); font-size:12px; color:var(--ink); cursor:pointer;
+    background:var(--panel2); border:1px solid var(--edge); border-radius:3px;
+    padding:6px 11px;
+  }
+  button:hover{ border-color:var(--link) }
+  button:focus-visible{ outline:2px solid var(--link); outline-offset:2px }
+  button.primary{ background:var(--alert); border-color:var(--alert); color:#fff; font-weight:600 }
+  button.ghost{ background:transparent }
+  button[disabled]{ cursor:default; color:var(--dim) }
+
+  /* Loss of feed has to be as visible as an alarm, and distinct from one. An
+     operator who believes they are covered when they are not is the worst
+     state this console can be in. Issue I3, decision D7. */
+  .feedbanner{
+    flex:none; padding:9px 16px; font-size:13px; font-weight:600;
+    background:var(--panel2); color:var(--ink); border-bottom:1px solid var(--warn);
+  }
+  .feedbanner.bad{ background:var(--warn); color:#131f29; border-bottom-color:var(--warn) }
+  .feedbanner[hidden]{ display:none }
+
+  .grid{ display:grid; grid-template-columns: 330px 1fr 320px; flex:1; min-height:0 }
+  .col{ display:flex; flex-direction:column; min-height:0; border-right:1px solid var(--edge) }
+  .col:last-child{ border-right:none; border-left:1px solid var(--edge) }
+  .hd{
+    padding:9px 13px; font-size:10px; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--dim); background:var(--panel); border-bottom:1px solid var(--edge);
+    display:flex; justify-content:space-between; align-items:center; flex:none;
+  }
+  .scroll{ overflow-y:auto; flex:1; min-height:0 }
+
+  /* ---- incident queue ---- */
+  .inc{
+    padding:11px 13px; border-bottom:1px solid var(--edge); cursor:pointer;
+    border-left:3px solid transparent; background:var(--base);
+  }
+  .inc:hover{ background:var(--panel) }
+  .inc.sel{ background:var(--panel); border-left-color:var(--link) }
+  .inc.open{ border-left-color:var(--alert) }
+  .inc.ackd{ opacity:.62 }
+  .inc .r1{ display:flex; justify-content:space-between; align-items:baseline; gap:8px }
+  .inc .id{ font-family:var(--mono); font-weight:700; font-size:14px }
+  .inc .ago{ font-family:var(--mono); font-size:11px; color:var(--dim); flex:none }
+  .inc .r2{ margin-top:4px; font-family:var(--mono); font-size:11.5px; color:var(--dim) }
+  /* Every tag carries its meaning in words. No status is conveyed by colour
+     alone, which is the part of the beacon rule that reaches the console. */
+  .tag{
+    display:inline-block; font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
+    padding:2px 6px; border-radius:2px; margin-top:6px; font-weight:600;
+  }
+  .tag.open{ background:var(--alert); color:#fff }
+  .tag.ackd{ background:var(--panel2); color:var(--ok); border:1px solid var(--ok) }
+  .tag.seen{ background:var(--panel2); color:var(--warn); border:1px solid var(--warn) }
+  /* An acknowledgement in flight is not an acknowledgement. It reads as its own
+     state in words, and the incident stays in the open list until the send is
+     confirmed, so nothing here can make a failed reply look like a delivered
+     one. */
+  .tag.sending{ background:var(--panel2); color:var(--link); border:1px solid var(--link) }
+
+  #map{ flex:1; min-height:0; background:var(--panel) }
+  .maphint{ padding:7px 13px; font-size:11px; color:var(--faint); border-top:1px solid var(--edge); flex:none }
+
+  /* ---- detail ---- */
+  .kv{ display:grid; grid-template-columns:104px 1fr; gap:5px 10px; padding:12px 13px; margin:0 }
+  .kv dt{ font-size:10px; letter-spacing:.11em; text-transform:uppercase; color:var(--dim); padding-top:2px }
+  .kv dd{ margin:0; font-family:var(--mono); font-size:12.5px; word-break:break-word; white-space:pre-line }
+  .act{ padding:0 13px 13px; display:flex; gap:8px }
+  .act button{ flex:1 }
+  .note{ margin:0 13px 11px; padding:9px 10px; font-size:12px; line-height:1.5;
+         color:var(--ink); background:var(--panel2); border-left:3px solid var(--warn) }
+  .note.bad{ border-left-color:var(--alert) }
+
+  /* ---- node health ---- */
+  .node{ padding:8px 13px; border-bottom:1px solid var(--edge); display:flex; align-items:center; gap:9px }
+  .dot{ width:7px; height:7px; border-radius:50%; flex:none }
+  .dot.up{ background:var(--ok) } .dot.stale{ background:var(--warn) } .dot.down{ background:var(--alert) }
+  .node .nm{ font-family:var(--mono); font-size:12px; flex:1 }
+  .node .mt{ font-family:var(--mono); font-size:11px; color:var(--dim) }
+
+  /* Overdue is not a distress alarm and must not look like one. A distress
+     alarm means a human pressed the button, and that meaning stays exact. */
+  #overdue-section{ background:var(--panel2); color:var(--warn) }
+  #overdue-section[hidden]{ display:none }
+  .od{ padding:9px 13px; border-bottom:1px solid var(--edge); border-left:3px solid var(--warn) }
+  .od .r1{ display:flex; justify-content:space-between; align-items:baseline; gap:8px }
+  .od .id{ font-family:var(--mono); font-weight:700; font-size:13px }
+  .od .ago{ font-size:11px; color:var(--dim) }
+  .od .r2{ margin-top:3px; font-family:var(--mono); font-size:11px; color:var(--dim) }
+
+  /* ---- log ---- */
+  #log{ font-family:var(--mono); font-size:11px; line-height:1.55; padding:9px 13px }
+  #log div{ margin-bottom:2px; color:var(--dim); white-space:pre-wrap }
+  #log .t{ color:var(--faint) }
+  #log .e{ color:var(--alert) }
+  #log .g{ color:var(--ok) }
+
+  /* ---- simulator ---- */
+  .sim{ padding:11px 13px; border-top:1px solid var(--edge); background:var(--panel); flex:none }
+  .sim .row{ display:flex; gap:6px; margin-bottom:7px }
+  .sim button{ flex:1; font-size:11px; padding:6px 4px }
+  input[type=text]{
+    width:100%; background:var(--base); color:var(--ink); font-family:var(--mono);
+    font-size:11.5px; border:1px solid var(--edge); border-radius:3px; padding:6px 8px;
+  }
+  input:focus{ outline:none; border-color:var(--link) }
+  .empty{ padding:22px 14px; color:var(--faint); font-size:12.5px; line-height:1.6 }
+  @media (prefers-reduced-motion: reduce){ *{ animation:none !important } }
+</style>
+</head>
+<body>
+
+<div class="statusbar">
+  <div class="sysstate" id="sysstate">Standby</div>
+  <div class="stat"><span class="k">Open</span><span class="v" id="s-open">0</span></div>
+  <div class="stat"><span class="k">Packets</span><span class="v" id="s-pkts">0</span></div>
+  <div class="stat"><span class="k">Repeaters up</span><span class="v" id="s-nodes">none known</span></div>
+  <div class="stat"><span class="k">Last packet</span><span class="v" id="s-last">never</span></div>
+  <div class="stat"><span class="k">Sound</span><span class="v bad" id="s-sound">NOT ARMED</span></div>
+  <div class="spacer"></div>
+  <button class="ghost" id="sound">Arm sound</button>
+  <div class="stat"><span class="k">Local time</span><span class="v" id="s-clock">--:--:--</span></div>
+</div>
+
+<div class="feedbanner bad" id="feedbanner">No live feed connected.</div>
+
+<div class="grid">
+
+  <div class="col">
+    <div class="hd"><span>Incident queue</span><span id="q-count">0</span></div>
+    <div class="scroll" id="queue"></div>
+    <div class="hd" id="overdue-section" hidden>
+      <span>Overdue parties</span><span id="overdue-count">0</span>
+    </div>
+    <div class="scroll" id="overdue" style="flex:0 0 auto; max-height:150px"></div>
+    <div class="hd"><span>Repeater health</span><span id="cov-count">no survey data</span></div>
+    <div class="scroll" id="nodes" style="flex:0 0 168px"></div>
+  </div>
+
+  <div class="col">
+    <div class="hd"><span>Position</span><span id="m-sel">no incident selected</span></div>
+    <div id="map"></div>
+    <div class="maphint" id="maphint">Map tiles need an internet connection. Coordinates are shown in the incident detail either way.</div>
+  </div>
+
+  <div class="col">
+    <div class="hd">Incident detail</div>
+    <div id="detail" class="scroll"></div>
+    <div class="hd">Event log</div>
+    <div class="scroll" id="log"></div>
+    <div class="sim">
+      <div class="hd" style="padding:0 0 8px 0; border:none; background:none">Simulator</div>
+      <div class="row">
+        <button id="sim-sos">Distress</button>
+        <button id="sim-ok">Check-in</button>
+        <button id="sim-tel">Telemetry</button>
+      </div>
+      <input type="text" id="raw" placeholder="Paste a raw packet and press Enter">
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"
+        integrity="sha384-NElt3Op+9NBMCYaef5HxeJmU4Xeard/Lku8ek6hoPTvYkQPh3zLIrJP7KiRocsxO"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- Classic scripts, not modules, so this page still opens straight from disk
+     with no build step and no server. The same files are required by
+     node:test, which is what makes the parser testable. -->
+<script src="lib/frames.js"></script>
+<script src="lib/incidents.js"></script>
+<script src="lib/nodes.js"></script>
+<script src="lib/watchdog.js"></script>
+<script src="lib/registry.js"></script>
+<script src="lib/overdue.js"></script>
+<script src="lib/coverage.js"></script>
+<script src="registry-data.js"></script>
+<script src="app.js"></script>
+<!-- Connects to the bridge if one is running. Harmless when there is not: the
+     console stays on the simulator and says it has no live feed. -->
+<script src="bridge-client.js"></script>
+<script>
+/* Load self check. Inline on purpose, so it runs even when nothing else did.
+   A console that quietly comes up without its parser would look like a calm
+   screen and behave like a dead one, which is the failure this whole product
+   exists to prevent. If the scripts above did not load, say so instead. */
+(function () {
+  var missing = ['TrekSafeFrames', 'TrekSafeIncidents', 'TrekSafeNodes',
+                 'TrekSafeWatchdog', 'TrekSafeRegistry', 'TrekSafeOverdue',
+                 'TrekSafeCoverage', 'TrekSafeConsole']
+    .filter(function (n) { return !window[n]; });
+  if (!missing.length) return;
+
+  document.body.innerHTML = '';
+  var box = document.createElement('div');
+  box.style.cssText = 'padding:40px;font:16px/1.6 system-ui,sans-serif;color:#dbe7ef;max-width:60ch';
+  var h = document.createElement('h1');
+  h.textContent = 'This console did not load.';
+  h.style.color = '#e2483c';
+  var p1 = document.createElement('p');
+  p1.textContent = 'It could not load: ' + missing.join(', ') +
+    '. Nothing on this screen can be trusted and no distress call would be seen.';
+  var p2 = document.createElement('p');
+  p2.textContent = 'The files in console/lib must sit next to index.html. If this page was ' +
+    'copied on its own, copy the whole console folder.';
+  box.appendChild(h); box.appendChild(p1); box.appendChild(p2);
+  document.body.appendChild(box);
+})();
+</script>
+</body>
+</html>
